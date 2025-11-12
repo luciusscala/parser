@@ -59,18 +59,40 @@ Return the extracted data as valid JSON only, with no additional text or explana
         
         try:
             # Call OpenAI API with timeout
-            response = await asyncio.wait_for(
-                self.client.chat.completions.create(
-                    model=settings.OPENAI_MODEL,
-                    messages=[
-                        {"role": "system", "content": system_message},
-                        {"role": "user", "content": user_message}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.1,  # Lower temperature for more consistent extraction
-                ),
-                timeout=settings.LLM_TIMEOUT / 1000.0  # Convert ms to seconds
-            )
+            # Build request parameters
+            request_params = {
+                "model": settings.OPENAI_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ],
+                "response_format": {"type": "json_object"},
+            }
+            
+            # Only add temperature if model supports it
+            # Some models like o1 and gpt-5-nano don't support custom temperature
+            model_name = settings.OPENAI_MODEL.lower()
+            models_without_temperature = ["o1", "gpt-5-nano"]
+            if not any(model_name.startswith(prefix) for prefix in models_without_temperature):
+                request_params["temperature"] = 0.1  # Lower temperature for more consistent extraction
+            
+            try:
+                response = await asyncio.wait_for(
+                    self.client.chat.completions.create(**request_params),
+                    timeout=settings.LLM_TIMEOUT / 1000.0  # Convert ms to seconds
+                )
+            except Exception as api_error:
+                # If temperature is not supported, retry without it
+                error_str = str(api_error).lower()
+                if "temperature" in error_str and "unsupported" in error_str:
+                    # Remove temperature and retry
+                    request_params.pop("temperature", None)
+                    response = await asyncio.wait_for(
+                        self.client.chat.completions.create(**request_params),
+                        timeout=settings.LLM_TIMEOUT / 1000.0
+                    )
+                else:
+                    raise
             
             # Extract JSON from response
             content = response.choices[0].message.content

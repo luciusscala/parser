@@ -11,7 +11,7 @@ class Settings:
     
     # OpenAI Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL")
     
     # Timeout Configuration (in milliseconds)
     BROWSER_TIMEOUT: int = int(os.getenv("BROWSER_TIMEOUT", "6000"))
