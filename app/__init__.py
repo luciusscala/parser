@@ -1,0 +1,2 @@
+# FastAPI Web Parser Application
+
