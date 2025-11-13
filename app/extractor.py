@@ -1,11 +1,14 @@
 """OpenAI LLM extraction logic for structured data parsing."""
 import json
 import asyncio
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
 from app.config import settings
 from app.preparser import extract_main_content
+
+logger = logging.getLogger(__name__)
 
 
 class LLMExtractor:
@@ -42,6 +45,18 @@ class LLMExtractor:
         """
         # Pre-parse content to remove boilerplate
         cleaned_content = extract_main_content(html_content, text_content)
+        
+        # Truncate to relevant range (0-15k chars) since flight data typically appears
+        # in the first portion of the page (around positions 5k-10k based on location_info)
+        # This significantly reduces token usage while keeping all relevant data
+        MAX_CONTENT_LENGTH = 15000
+        original_cleaned_length = len(cleaned_content)
+        if len(cleaned_content) > MAX_CONTENT_LENGTH:
+            logger.info(
+                f"Truncating cleaned content from {original_cleaned_length:,} chars to "
+                f"{MAX_CONTENT_LENGTH:,} chars (keeping first {MAX_CONTENT_LENGTH:,} chars)"
+            )
+            cleaned_content = cleaned_content[:MAX_CONTENT_LENGTH]
         
         # Load prompt template
         prompt = self._load_prompt()

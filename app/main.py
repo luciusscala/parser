@@ -67,6 +67,24 @@ async def parse_website(request: ParseRequest):
         html_content, text_content = await browser_manager.get_page_content(url_str)
         logger.info(f"Page loaded. HTML size: {len(html_content)} chars, Text size: {len(text_content)} chars")
         
+        # Save raw content to output.txt for investigation
+        try:
+            with open("output.txt", "w", encoding="utf-8") as f:
+                f.write("=" * 80 + "\n")
+                f.write(f"URL: {url_str}\n")
+                f.write("=" * 80 + "\n\n")
+                f.write("HTML CONTENT:\n")
+                f.write("-" * 80 + "\n")
+                f.write(html_content)
+                f.write("\n\n" + "=" * 80 + "\n\n")
+                f.write("TEXT CONTENT:\n")
+                f.write("-" * 80 + "\n")
+                f.write(text_content)
+                f.write("\n")
+            logger.info("Raw content saved to output.txt")
+        except Exception as e:
+            logger.warning(f"Failed to save output.txt: {e}")
+        
         # Step 2: Extract data using LLM
         logger.info("Extracting data with LLM...")
         extracted_data = await extractor.extract_data(html_content, text_content, url_str)

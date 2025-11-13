@@ -18,7 +18,52 @@ Your task is to extract flight information from the provided web page content an
       "duration": <ISO 8601 duration string, e.g., "PT4H15M" for 4 hours 15 minutes>,
       "layover": <ISO 8601 duration string for time between segments, e.g., "PT1H30M", or null if no layover>
     }
-  ]
+  ],
+  "location_info": {
+    "flight": {
+      "price": {
+        "found_at": <description of where price was found, e.g., "line 1234, near 'Total Price' text" or "around character position 45000" or "in price section with class 'price-display'">,
+        "context": <surrounding text or HTML context where price was located, 50-100 characters>
+      }
+    },
+    "flight_segments": [
+      {
+        "segment_index": <integer>,
+        "airline": {
+          "found_at": <location description>,
+          "context": <surrounding context>
+        },
+        "flight_number": {
+          "found_at": <location description>,
+          "context": <surrounding context>
+        },
+        "departure_airport": {
+          "found_at": <location description>,
+          "context": <surrounding context>
+        },
+        "arrival_airport": {
+          "found_at": <location description>,
+          "context": <surrounding context>
+        },
+        "departure_time": {
+          "found_at": <location description>,
+          "context": <surrounding context>
+        },
+        "arrival_time": {
+          "found_at": <location description>,
+          "context": <surrounding context>
+        },
+        "duration": {
+          "found_at": <location description>,
+          "context": <surrounding context>
+        },
+        "layover": {
+          "found_at": <location description or null if not found>,
+          "context": <surrounding context or null>
+        }
+      }
+    ]
+  }
 }
 
 Extraction Guidelines:
@@ -37,13 +82,23 @@ Extraction Guidelines:
    - `duration`: Flight duration in ISO 8601 duration format (PT#H#M). If only hours or only minutes, format accordingly (e.g., "PT2H" or "PT45M")
    - `layover`: Time between segments at connecting airports. Use ISO 8601 duration format. For the first segment, this should be null. For subsequent segments, calculate the time between the previous segment's arrival and this segment's departure
 
-3. **Data Quality:**
+3. **Location Information (IMPORTANT):**
+   - For EACH extracted field, provide location information in the "location_info" object
+   - "found_at": Describe where you found the data. Include:
+     * Approximate line number or character position in the content (if you can estimate)
+     * Nearby text labels or identifiers (e.g., "near 'Departure' label", "in div with class 'flight-info'")
+     * Section or area of the page (e.g., "in flight card section", "in price summary area")
+   - "context": Provide 50-100 characters of surrounding text/HTML where the data was found
+   - This helps verify extraction accuracy and locate data in the source
+   - If a field is null (not found), set both "found_at" and "context" to null
+
+4. **Data Quality:**
    - If a field cannot be found, use null (except segment_index which should always be present)
    - Ensure all timestamps include timezone information
    - Parse dates and times accurately from the page content
    - For multi-city or complex itineraries, extract all segments in chronological order
 
-4. **Output Format:**
+5. **Output Format:**
    - Return ONLY valid JSON, no additional text or explanation
    - Ensure proper JSON escaping for strings
    - Use null (not "null" as string) for missing values
@@ -52,8 +107,7 @@ Extraction Guidelines:
 Example output structure:
 {
   "flight": {
-    "price": 450.99,
-    "link": "https://www.google.com/flights/..."
+    "price": 450.99
   },
   "flight_segments": [
     {
@@ -78,7 +132,87 @@ Example output structure:
       "duration": "PT1H15M",
       "layover": "PT1H30M"
     }
-  ]
+  ],
+  "location_info": {
+    "flight": {
+      "price": {
+        "found_at": "around character position 12500, in price section with class 'total-price'",
+        "context": "...Total price: $450.99 (includes taxes and fees)..."
+      }
+    },
+    "flight_segments": [
+      {
+        "segment_index": 0,
+        "airline": {
+          "found_at": "around character position 8000, in flight card section",
+          "context": "...American Airlines flight AA1234 from JFK to LAX..."
+        },
+        "flight_number": {
+          "found_at": "same location as airline, near 'AA1234' text",
+          "context": "...American Airlines flight AA1234..."
+        },
+        "departure_airport": {
+          "found_at": "around character position 8050, in departure section",
+          "context": "...Departure: JFK at 08:00..."
+        },
+        "arrival_airport": {
+          "found_at": "around character position 8100, in arrival section",
+          "context": "...Arrival: LAX at 11:30..."
+        },
+        "departure_time": {
+          "found_at": "around character position 8050, next to departure airport",
+          "context": "...JFK at 08:00 AM on Nov 15..."
+        },
+        "arrival_time": {
+          "found_at": "around character position 8100, next to arrival airport",
+          "context": "...LAX at 11:30 AM on Nov 15..."
+        },
+        "duration": {
+          "found_at": "around character position 8150, in flight duration section",
+          "context": "...Duration: 6h 30m..."
+        },
+        "layover": {
+          "found_at": null,
+          "context": null
+        }
+      },
+      {
+        "segment_index": 1,
+        "airline": {
+          "found_at": "around character position 12000, in second flight card",
+          "context": "...American Airlines flight AA5678 from LAX to SFO..."
+        },
+        "flight_number": {
+          "found_at": "same location as airline",
+          "context": "...AA5678..."
+        },
+        "departure_airport": {
+          "found_at": "around character position 12050",
+          "context": "...LAX at 13:00..."
+        },
+        "arrival_airport": {
+          "found_at": "around character position 12100",
+          "context": "...SFO at 14:15..."
+        },
+        "departure_time": {
+          "found_at": "around character position 12050",
+          "context": "...13:00 PM on Nov 15..."
+        },
+        "arrival_time": {
+          "found_at": "around character position 12100",
+          "context": "...14:15 PM on Nov 15..."
+        },
+        "duration": {
+          "found_at": "around character position 12150",
+          "context": "...1h 15m..."
+        },
+        "layover": {
+          "found_at": "around character position 11900, in connection info",
+          "context": "...Layover in LAX: 1h 30m..."
+        }
+      }
+    ]
+  }
 }
 
 Now extract the flight data from the provided content and return it in this exact format.
