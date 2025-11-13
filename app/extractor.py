@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
 from app.config import settings
-from app.preparser import extract_main_content
+from app.preparser import extract_main_content, extract_targeted_content
 
 logger = logging.getLogger(__name__)
 
@@ -43,20 +43,50 @@ class LLMExtractor:
             TimeoutError: If LLM call exceeds timeout
             ValueError: If response is not valid JSON
         """
-        # Pre-parse content to remove boilerplate
-        cleaned_content = extract_main_content(html_content, text_content)
+        # Use targeted extraction: find airport codes, numbers, and flight keywords
+        # then extract context around matches. This is much more efficient than processing full content.
+        original_html_length = len(html_content)
+        original_text_length = len(text_content)
         
-        # Truncate to relevant range (0-15k chars) since flight data typically appears
-        # in the first portion of the page (around positions 5k-10k based on location_info)
-        # This significantly reduces token usage while keeping all relevant data
-        MAX_CONTENT_LENGTH = 15000
-        original_cleaned_length = len(cleaned_content)
-        if len(cleaned_content) > MAX_CONTENT_LENGTH:
-            logger.info(
-                f"Truncating cleaned content from {original_cleaned_length:,} chars to "
-                f"{MAX_CONTENT_LENGTH:,} chars (keeping first {MAX_CONTENT_LENGTH:,} chars)"
-            )
-            cleaned_content = cleaned_content[:MAX_CONTENT_LENGTH]
+        logger.info(
+            f"Input sizes - HTML: {original_html_length:,} chars, Text: {original_text_length:,} chars"
+        )
+        
+        # Use targeted extraction on text content (much faster and more focused)
+        cleaned_content = extract_targeted_content(text_content, context_window=200)
+        
+        if not cleaned_content or len(cleaned_content.strip()) < 100:
+            # Fallback: if targeted extraction finds nothing, use regular cleaning
+            logger.warning("Targeted extraction found little content, falling back to regular cleaning")
+            cleaned_content = extract_main_content(html_content, text_content)
+        
+        final_length = len(cleaned_content)
+        logger.info(
+            f"Targeted extraction result: {final_length:,} characters "
+            f"(reduced from {original_text_length:,} chars, "
+            f"{((original_text_length - final_length) / original_text_length * 100):.1f}% reduction)"
+        )
+        
+        # Save the exact content sent to LLM to output2.txt
+        try:
+            with open("output2.txt", "w", encoding="utf-8") as f:
+                f.write("=" * 80 + "\n")
+                f.write(f"URL: {url}\n")
+                f.write("=" * 80 + "\n\n")
+                f.write(f"Final Content Length: {final_length:,} characters\n")
+                f.write(f"Original HTML Length: {original_html_length:,} characters\n")
+                f.write(f"Original Text Length: {original_text_length:,} characters\n")
+                f.write(f"Extraction Method: Targeted (airport codes, numbers, keywords + context)\n")
+                reduction_pct = ((original_text_length - final_length) / original_text_length * 100) if original_text_length > 0 else 0
+                f.write(f"Reduction: {original_text_length:,} -> {final_length:,} chars ({reduction_pct:.1f}% reduction)\n")
+                f.write("=" * 80 + "\n\n")
+                f.write("EXACT CONTENT SENT TO LLM:\n")
+                f.write("-" * 80 + "\n")
+                f.write(cleaned_content)
+                f.write("\n")
+            logger.info("Truncated content saved to output2.txt")
+        except Exception as e:
+            logger.warning(f"Failed to save output2.txt: {e}")
         
         # Load prompt template
         prompt = self._load_prompt()
