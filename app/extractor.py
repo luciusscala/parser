@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
 from app.config import settings
-from app.preparser import extract_main_content, extract_targeted_content
+from app.preparser import clean_html_for_llm
 
 logger = logging.getLogger(__name__)
 
@@ -43,28 +43,20 @@ class LLMExtractor:
             TimeoutError: If LLM call exceeds timeout
             ValueError: If response is not valid JSON
         """
-        # Use targeted extraction: find airport codes, numbers, and flight keywords
-        # then extract context around matches. This is much more efficient than processing full content.
+        # Simple cleaning: remove only obvious non-content (images, svg, scripts)
+        # Keep most HTML structure for LLM to analyze
         original_html_length = len(html_content)
-        original_text_length = len(text_content)
         
-        logger.info(
-            f"Input sizes - HTML: {original_html_length:,} chars, Text: {original_text_length:,} chars"
-        )
+        logger.info(f"Original HTML length: {original_html_length:,} characters")
         
-        # Use targeted extraction on text content (much faster and more focused)
-        cleaned_content = extract_targeted_content(text_content, context_window=200)
-        
-        if not cleaned_content or len(cleaned_content.strip()) < 100:
-            # Fallback: if targeted extraction finds nothing, use regular cleaning
-            logger.warning("Targeted extraction found little content, falling back to regular cleaning")
-            cleaned_content = extract_main_content(html_content, text_content)
+        # Clean HTML: remove only images, svg, scripts, styles
+        cleaned_content = clean_html_for_llm(html_content)
         
         final_length = len(cleaned_content)
         logger.info(
-            f"Targeted extraction result: {final_length:,} characters "
-            f"(reduced from {original_text_length:,} chars, "
-            f"{((original_text_length - final_length) / original_text_length * 100):.1f}% reduction)"
+            f"Cleaned HTML length: {final_length:,} characters "
+            f"(removed {original_html_length - final_length:,} chars, "
+            f"{((original_html_length - final_length) / original_html_length * 100):.1f}% reduction)"
         )
         
         # Save the exact content sent to LLM to output2.txt
@@ -75,10 +67,9 @@ class LLMExtractor:
                 f.write("=" * 80 + "\n\n")
                 f.write(f"Final Content Length: {final_length:,} characters\n")
                 f.write(f"Original HTML Length: {original_html_length:,} characters\n")
-                f.write(f"Original Text Length: {original_text_length:,} characters\n")
-                f.write(f"Extraction Method: Targeted (airport codes, numbers, keywords + context)\n")
-                reduction_pct = ((original_text_length - final_length) / original_text_length * 100) if original_text_length > 0 else 0
-                f.write(f"Reduction: {original_text_length:,} -> {final_length:,} chars ({reduction_pct:.1f}% reduction)\n")
+                f.write(f"Cleaning Method: Removed images, svg, scripts, styles only\n")
+                reduction_pct = ((original_html_length - final_length) / original_html_length * 100) if original_html_length > 0 else 0
+                f.write(f"Reduction: {original_html_length:,} -> {final_length:,} chars ({reduction_pct:.1f}% reduction)\n")
                 f.write("=" * 80 + "\n\n")
                 f.write("EXACT CONTENT SENT TO LLM:\n")
                 f.write("-" * 80 + "\n")
@@ -93,14 +84,14 @@ class LLMExtractor:
         
         # Construct message for LLM
         system_message = prompt
-        user_message = f"""Extract the requested data from the following web page content.
+        user_message = f"""Analyze the following HTML structure and extract flight data.
 
 URL: {url}
 
-Content:
+HTML Content:
 {cleaned_content}
 
-Return the extracted data as valid JSON only, with no additional text or explanation."""
+First, analyze the HTML structure to determine the best extraction method. Then extract all flight data and return it as valid JSON following the specified format."""
         
         try:
             # Call OpenAI API with timeout

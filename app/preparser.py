@@ -232,25 +232,36 @@ def extract_targeted_content(text_content: str, context_window: int = 200) -> st
 
 def clean_html_for_llm(html_content: str) -> str:
     """
-    Clean HTML by removing boilerplate elements.
+    Clean HTML by removing only obvious non-content elements (images, svg, scripts).
+    Keeps most of the HTML structure for LLM analysis.
     
     Args:
         html_content: Raw HTML content
         
     Returns:
-        Cleaned HTML with boilerplate removed
+        Cleaned HTML with only obvious non-content elements removed
     """
     if SELECTOLAX_AVAILABLE:
         tree = HTMLParser(html_content)
-        for tag in tree.css('script, style, nav, footer, header, aside, noscript, meta, link'):
+        # Only remove obvious non-content: images, svg, scripts, styles
+        for tag in tree.css('script, style, img, svg, image, noscript'):
             tag.decompose()
         return tree.html
     elif BEAUTIFULSOUP_AVAILABLE:
         soup = BeautifulSoup(html_content, 'html.parser')
-        for tag in soup.find_all(['script', 'style', 'nav', 'footer', 'header', 'aside', 'noscript', 'meta', 'link']):
+        # Only remove obvious non-content: images, svg, scripts, styles
+        for tag in soup.find_all(['script', 'style', 'img', 'svg', 'image', 'noscript']):
             tag.decompose()
         return str(soup)
     else:
-        # No parser available, return original HTML
+        # No parser available, use regex to remove script and style tags
+        # Remove script tags
+        html_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+        # Remove style tags
+        html_content = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+        # Remove img tags
+        html_content = re.sub(r'<img[^>]*>', '', html_content, flags=re.IGNORECASE)
+        # Remove svg tags
+        html_content = re.sub(r'<svg[^>]*>.*?</svg>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
         return html_content
 
