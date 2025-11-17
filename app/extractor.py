@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
 from app.config import settings
-from app.preparser import clean_html_for_llm
+from app.preparser import clean_html_for_llm, optimize_html_for_flights
 
 logger = logging.getLogger(__name__)
 
@@ -43,21 +43,32 @@ class LLMExtractor:
             TimeoutError: If LLM call exceeds timeout
             ValueError: If response is not valid JSON
         """
-        # Simple cleaning: remove only obvious non-content (images, svg, scripts)
-        # Keep most HTML structure for LLM to analyze
+        # Optimize HTML: use targeted extraction based on known Google Flights structure
+        # This keeps only flight-relevant elements (data-slice-index, flight classes, prices)
         original_html_length = len(html_content)
         
         logger.info(f"Original HTML length: {original_html_length:,} characters")
         
-        # Clean HTML: remove only images, svg, scripts, styles
-        cleaned_content = clean_html_for_llm(html_content)
+        # First pass: basic cleaning
+        basic_cleaned = clean_html_for_llm(html_content)
+        basic_length = len(basic_cleaned)
+        logger.info(f"After basic cleaning: {basic_length:,} characters")
+        
+        # Second pass: optimize for flight data (keep only relevant elements)
+        cleaned_content = optimize_html_for_flights(basic_cleaned)
         
         final_length = len(cleaned_content)
         logger.info(
-            f"Cleaned HTML length: {final_length:,} characters "
+            f"Optimized HTML length: {final_length:,} characters "
             f"(removed {original_html_length - final_length:,} chars, "
-            f"{((original_html_length - final_length) / original_html_length * 100):.1f}% reduction)"
+            f"{((original_html_length - final_length) / original_html_length * 100):.1f}% reduction from original)"
         )
+        
+        if basic_length > 0:
+            logger.info(
+                f"Optimization removed additional {basic_length - final_length:,} chars "
+                f"({((basic_length - final_length) / basic_length * 100):.1f}% reduction from basic cleaning)"
+            )
         
         # Save the exact content sent to LLM to output2.txt
         try:
@@ -67,9 +78,9 @@ class LLMExtractor:
                 f.write("=" * 80 + "\n\n")
                 f.write(f"Final Content Length: {final_length:,} characters\n")
                 f.write(f"Original HTML Length: {original_html_length:,} characters\n")
-                f.write(f"Cleaning Method: Removed images, svg, scripts, styles only\n")
+                f.write(f"Cleaning Method: Optimized for flight data (keeps data-slice-index, flight classes, prices)\n")
                 reduction_pct = ((original_html_length - final_length) / original_html_length * 100) if original_html_length > 0 else 0
-                f.write(f"Reduction: {original_html_length:,} -> {final_length:,} chars ({reduction_pct:.1f}% reduction)\n")
+                f.write(f"Total Reduction: {original_html_length:,} -> {final_length:,} chars ({reduction_pct:.1f}% reduction)\n")
                 f.write("=" * 80 + "\n\n")
                 f.write("EXACT CONTENT SENT TO LLM:\n")
                 f.write("-" * 80 + "\n")
